@@ -1,7 +1,7 @@
 "use client";
 
 import { PrivyProvider, useActiveWallet, usePrivy, useWallets } from "@privy-io/react-auth";
-import { ReactNode, useEffect, useMemo } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { WalletUiProvider } from "../lib/wallet-ui";
 import { privyAppId, privyClientId, privyConfig, privyEnabled } from "../lib/wallet";
 
@@ -77,7 +77,15 @@ function PrivyWalletBridge({ children }: { children: ReactNode }) {
 }
 
 export function Providers({ children }: { children: ReactNode }) {
-  if (!privyEnabled) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // During SSR/prerender we always fall back to the inert wallet context so
+  // Vercel builds don't fail if Privy is not available or not yet configured.
+  if (!mounted || !privyEnabled) {
     return (
       <WalletUiProvider
         value={{
