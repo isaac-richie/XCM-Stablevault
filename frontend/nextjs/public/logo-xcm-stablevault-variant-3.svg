@@ -1,0 +1,26 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="512" height="512" rx="112" fill="#090B10"/>
+  <rect x="40" y="40" width="432" height="432" rx="100" fill="url(#bg)"/>
+  <path d="M136 256C136 189.726 189.726 136 256 136C322.274 136 376 189.726 376 256C376 322.274 322.274 376 256 376C189.726 376 136 322.274 136 256Z" fill="#0D1320" stroke="#1E40AF" stroke-width="2"/>
+  <path d="M194 194H318V318H194V194Z" rx="32" fill="url(#center)"/>
+  <path d="M216 216L296 296" stroke="#F8FAFC" stroke-width="20" stroke-linecap="round"/>
+  <path d="M296 216L216 296" stroke="#BFDBFE" stroke-width="20" stroke-linecap="round"/>
+  <path d="M256 92V126" stroke="#1D4ED8" stroke-width="12" stroke-linecap="round"/>
+  <path d="M256 386V420" stroke="#1D4ED8" stroke-width="12" stroke-linecap="round"/>
+  <path d="M92 256H126" stroke="#1D4ED8" stroke-width="12" stroke-linecap="round"/>
+  <path d="M386 256H420" stroke="#1D4ED8" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="256" cy="92" r="14" fill="#60A5FA"/>
+  <circle cx="256" cy="420" r="14" fill="#60A5FA"/>
+  <circle cx="92" cy="256" r="14" fill="#60A5FA"/>
+  <circle cx="420" cy="256" r="14" fill="#60A5FA"/>
+  <defs>
+    <linearGradient id="bg" x1="72" y1="56" x2="438" y2="460" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0B1120"/>
+      <stop offset="1" stop-color="#0A0D14"/>
+    </linearGradient>
+    <linearGradient id="center" x1="256" y1="194" x2="256" y2="318" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#2563EB"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+  </defs>
+</svg>
