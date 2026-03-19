@@ -121,6 +121,7 @@ export default function Page() {
   const [aiHistory, setAiHistory] = useState<AiDecisionHistoryItem[]>([]);
   const [aiExplanation, setAiExplanation] = useState<AiExplanationState>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [autoSwitching, setAutoSwitching] = useState(false);
@@ -841,6 +842,23 @@ export default function Page() {
   }, []);
 
   useEffect(() => {
+    setMobileNavOpen(false);
+  }, [activeSessionAccount, chainId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const body = document.body;
+    if (mobileNavOpen) {
+      body.classList.add("mobile-nav-open");
+    } else {
+      body.classList.remove("mobile-nav-open");
+    }
+
+    return () => body.classList.remove("mobile-nav-open");
+  }, [mobileNavOpen]);
+
+  useEffect(() => {
     if (!walletSessionReady || correctNetwork || autoSwitching || !autoSwitchKey) return;
     if (autoSwitchAttempted === autoSwitchKey) return;
 
@@ -932,6 +950,18 @@ export default function Page() {
           <div className="vault-nav-brand">
             <img className="vault-nav-mark" src="/Gemin.png" alt="XCM StableVault logo" />
           </div>
+          <button
+            type="button"
+            className={mobileNavOpen ? "mobile-nav-toggle mobile-nav-toggle-open" : "mobile-nav-toggle"}
+            onClick={() => setMobileNavOpen((value) => !value)}
+            aria-expanded={mobileNavOpen}
+            aria-controls="mobile-nav-drawer"
+            aria-label={mobileNavOpen ? "Close navigation menu" : "Open navigation menu"}
+          >
+            <span />
+            <span />
+            <span />
+          </button>
           <div className="vault-nav-links">
             {primaryNav.map((item) => (
               item.comingSoon ? (
@@ -939,7 +969,10 @@ export default function Page() {
                   key={item.label}
                   type="button"
                   className={item.accent ? "nav-link nav-link-active nav-pill-button" : "nav-link nav-pill-button"}
-                  onClick={() => showComingSoon(item.label)}
+                  onClick={() => {
+                    setMobileNavOpen(false);
+                    showComingSoon(item.label);
+                  }}
                 >
                   {item.label}
                 </button>
@@ -948,6 +981,7 @@ export default function Page() {
                   key={item.label}
                   className={item.accent ? "nav-link nav-link-active" : "nav-link"}
                   href={item.href}
+                  onClick={() => setMobileNavOpen(false)}
                 >
                   {item.label}
                 </a>
@@ -972,7 +1006,10 @@ export default function Page() {
                     key={item.label}
                     className="more-dropdown-item"
                     href={item.href}
-                    onClick={() => setMoreOpen(false)}
+                    onClick={() => {
+                      setMoreOpen(false);
+                      setMobileNavOpen(false);
+                    }}
                   >
                     {item.label}
                   </a>
@@ -981,9 +1018,6 @@ export default function Page() {
             </div>
           </div>
           <div className="vault-nav-actions">
-            <a className="nav-utility" href={appConfig.explorerUrl} target="_blank" rel="noreferrer">
-              Explorer
-            </a>
             {!walletSessionReady ? (
               <button className="primary" onClick={connectWallet} disabled={walletBooting}>
                 {walletBooting ? "Loading wallets..." : walletSuppressed && walletReady ? "Reconnect Wallet" : "Connect Wallet"}
@@ -1055,6 +1089,117 @@ export default function Page() {
             ) : null}
           </div>
         </nav>
+        <div id="mobile-nav-drawer" className={mobileNavOpen ? "mobile-nav-drawer mobile-nav-drawer-open" : "mobile-nav-drawer"}>
+          <div className="mobile-nav-section">
+            {primaryNav.map((item) => (
+              item.comingSoon ? (
+                <button
+                  key={`mobile-${item.label}`}
+                  type="button"
+                  className={item.accent ? "mobile-nav-link mobile-nav-link-active" : "mobile-nav-link"}
+                  onClick={() => {
+                    setMobileNavOpen(false);
+                    showComingSoon(item.label);
+                  }}
+                >
+                  {item.label}
+                </button>
+              ) : (
+                <a
+                  key={`mobile-${item.label}`}
+                  className={item.accent ? "mobile-nav-link mobile-nav-link-active" : "mobile-nav-link"}
+                  href={item.href}
+                  onClick={() => setMobileNavOpen(false)}
+                >
+                  {item.label}
+                </a>
+              )
+            ))}
+            {moreNav.map((item) => (
+              <a
+                key={`mobile-${item.label}`}
+                className="mobile-nav-link"
+                href={item.href}
+                onClick={() => setMobileNavOpen(false)}
+              >
+                {item.label}
+              </a>
+            ))}
+          </div>
+          <div className="mobile-nav-section mobile-nav-section-secondary">
+            {!walletSessionReady ? (
+              <button
+                type="button"
+                className="primary wide"
+                onClick={() => {
+                  setMobileNavOpen(false);
+                  void connectWallet();
+                }}
+                disabled={walletBooting}
+              >
+                {walletBooting ? "Loading wallets..." : walletSuppressed && walletReady ? "Reconnect Wallet" : "Connect Wallet"}
+              </button>
+            ) : (
+              <>
+                <div className="mobile-nav-wallet">Wallet: {shortAddress(account)}</div>
+                {!correctNetwork ? (
+                  <button
+                    type="button"
+                    className="mobile-nav-link"
+                    onClick={() => {
+                      setMobileNavOpen(false);
+                      void switchNetwork();
+                    }}
+                    disabled={autoSwitching}
+                  >
+                    {autoSwitching ? "Switching network..." : `Switch to ${appConfig.chainName}`}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="mobile-nav-link"
+                  onClick={() => {
+                    setMobileNavOpen(false);
+                    void copyWalletAddress();
+                  }}
+                >
+                  Copy wallet address
+                </button>
+                <button
+                  type="button"
+                  className="mobile-nav-link"
+                  onClick={() => {
+                    setMobileNavOpen(false);
+                    void loadState(account);
+                  }}
+                >
+                  Refresh balances
+                </button>
+                <button
+                  type="button"
+                  className="mobile-nav-link mobile-nav-link-danger"
+                  onClick={() => {
+                    setMobileNavOpen(false);
+                    void disconnectWallet();
+                  }}
+                >
+                  Disconnect
+                </button>
+              </>
+            )}
+            {isAdmin ? (
+              <Link className="mobile-nav-link" href="/admin" onClick={() => setMobileNavOpen(false)}>
+                Admin
+              </Link>
+            ) : null}
+          </div>
+        </div>
+        <button
+          type="button"
+          className={mobileNavOpen ? "mobile-nav-backdrop mobile-nav-backdrop-open" : "mobile-nav-backdrop"}
+          aria-label="Close navigation menu"
+          onClick={() => setMobileNavOpen(false)}
+        />
       </div>
 
       <header className="topbar">
@@ -1520,11 +1665,15 @@ export default function Page() {
             ) : (
               aiHistory.map((decision) => (
                 <div className="activity-row ai-history-grid" key={decision.id}>
-                  <span>{new Date(decision.createdAt).toLocaleString()}</span>
-                  <span>{decision.score}/100</span>
-                  <span className={`badge-inline ${decision.action}`}>{decision.action}</span>
-                  <span className={`badge-inline ${decision.posture}`}>{decision.posture}</span>
-                  <span>
+                  <span className="activity-cell" data-label="Time">{new Date(decision.createdAt).toLocaleString()}</span>
+                  <span className="activity-cell" data-label="Score">{decision.score}/100</span>
+                  <span className="activity-cell" data-label="Action">
+                    <span className={`badge-inline ${decision.action}`}>{decision.action}</span>
+                  </span>
+                  <span className="activity-cell" data-label="Posture">
+                    <span className={`badge-inline ${decision.posture}`}>{decision.posture}</span>
+                  </span>
+                  <span className="activity-cell" data-label="Linked Action">
                     {decision.linkedActionId ? (
                       <button
                         type="button"
@@ -1598,15 +1747,15 @@ export default function Page() {
                   className={`activity-row user-activity-grid ${selectedAction?.id === action.id ? "activity-row-selected" : ""}`}
                   key={action.id}
                 >
-                  <span>
+                  <span className="activity-cell" data-label="Source">
                     <span className={`badge-inline ${action.source || "user"}`}>{action.source || "user"}</span>
                   </span>
-                  <span>
+                  <span className="activity-cell" data-label="Status">
                     <ActionBadge status={action.status} />
                   </span>
-                  <span>{action.amountDisplay} PAS</span>
-                  <span>{shortAddress(action.beneficiary)}</span>
-                  <span>
+                  <span className="activity-cell" data-label="Amount">{action.amountDisplay} PAS</span>
+                  <span className="activity-cell" data-label="Recipient">{shortAddress(action.beneficiary)}</span>
+                  <span className="activity-cell" data-label="Details">
                     <button
                       className="secondary compact"
                       onClick={() => setSelectedAction(action)}
