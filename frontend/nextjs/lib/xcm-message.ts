@@ -1,6 +1,6 @@
 import { parseUnits } from "ethers";
 import path from "path";
-import { buildXcmBytes } from "../../../scripts/xcm-lib";
+import { buildXcmBytes } from "./xcm-build";
 
 export function isLikelySs58(value: string) {
   return /^[1-9A-HJ-NP-Za-km-z]{20,}$/.test(value.trim());
