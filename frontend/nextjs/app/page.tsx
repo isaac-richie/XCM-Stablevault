@@ -2,6 +2,7 @@
 
 import { BrowserProvider, Contract, JsonRpcProvider } from "ethers";
 import Link from "next/link";
+import { decodeAddress } from "@polkadot/util-crypto";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { mockUsdAbi, vaultAbi, wpasAbi } from "../lib/abis";
 import { appConfig } from "../lib/config";
@@ -109,7 +110,13 @@ function formatMaxAmount(value: bigint | null | undefined) {
 }
 
 function isLikelySs58(value: string) {
-  return /^[1-9A-HJ-NP-Za-km-z]{20,}$/.test(value.trim());
+  const trimmed = value.trim();
+  if (!/^[1-9A-HJ-NP-Za-km-z]{20,}$/.test(trimmed)) return false;
+  try {
+    return decodeAddress(trimmed).length === 32;
+  } catch {
+    return false;
+  }
 }
 
 export default function Page() {
