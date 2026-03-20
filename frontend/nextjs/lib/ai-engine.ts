@@ -62,14 +62,23 @@ export async function buildAiRecommendation(input: AiInputs): Promise<AiRecommen
 
   // The recommendation combines user position data with recent action history
   // so it stays helpful without taking custody away from the user.
+  const safeCountActions = async (options: Parameters<typeof countActions>[0]) => {
+    try {
+      return await countActions(options);
+    } catch (error) {
+      console.error("[ai-engine] failed to query action counts", error);
+      return 0;
+    }
+  };
+
   const [pendingActions, failedActions, settledActions] = await Promise.all([
-    countActions({ requester: input.requester, status: "queued" }).then(async (queued) => {
-      const processing = await countActions({ requester: input.requester, status: "processing" });
-      const dispatched = await countActions({ requester: input.requester, status: "dispatched" });
+    safeCountActions({ requester: input.requester, status: "queued" }).then(async (queued) => {
+      const processing = await safeCountActions({ requester: input.requester, status: "processing" });
+      const dispatched = await safeCountActions({ requester: input.requester, status: "dispatched" });
       return queued + processing + dispatched;
     }),
-    countActions({ requester: input.requester, status: "failed" }),
-    countActions({ requester: input.requester, status: "settled" })
+    safeCountActions({ requester: input.requester, status: "failed" }),
+    safeCountActions({ requester: input.requester, status: "settled" })
   ]);
 
   const queuePressure =

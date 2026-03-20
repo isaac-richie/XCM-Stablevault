@@ -69,7 +69,13 @@ export async function GET(request: NextRequest) {
     };
 
     const recommendation = await buildAiRecommendation({ requester, state });
-    await insertAiDecision(requester, recommendation);
+
+    try {
+      await insertAiDecision(requester, recommendation);
+    } catch (error) {
+      console.error("[ai/recommendation] failed to persist AI decision", error);
+    }
+
     return NextResponse.json({ ok: true, recommendation });
   } catch (error: any) {
     return NextResponse.json(

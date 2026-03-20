@@ -13,9 +13,7 @@ export async function GET(request: NextRequest) {
     const decisions = await listAiDecisions(requester, limit);
     return NextResponse.json({ ok: true, decisions });
   } catch (error: any) {
-    return NextResponse.json(
-      { ok: false, error: error?.message || "AI history query failed" },
-      { status: 500 }
-    );
+    console.error("[ai/history] failed to load AI history", error);
+    return NextResponse.json({ ok: true, decisions: [], degraded: true });
   }
 }

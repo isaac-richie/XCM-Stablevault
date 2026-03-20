@@ -21,7 +21,13 @@ function fallbackExplanation(recommendation: Awaited<ReturnType<typeof buildAiRe
 }
 
 async function buildRecommendationWithBestEffortState(requester: string) {
-  const actions = await listActions({ requester, limit: 5 });
+  let actions = [] as Awaited<ReturnType<typeof listActions>>;
+
+  try {
+    actions = await listActions({ requester, limit: 5 });
+  } catch (error) {
+    console.error("[ai/explanation] failed to load action history", error);
+  }
 
   try {
     const [
