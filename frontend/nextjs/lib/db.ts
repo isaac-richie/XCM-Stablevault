@@ -1,7 +1,6 @@
-import Database from "better-sqlite3";
 import { mkdirSync } from "fs";
 import path from "path";
-import { Pool, PoolClient, QueryResultRow } from "pg";
+import type { Pool, PoolClient, QueryResultRow } from "pg";
 
 const dataDir = path.join(process.cwd(), ".data");
 mkdirSync(dataDir, { recursive: true });
@@ -9,7 +8,9 @@ mkdirSync(dataDir, { recursive: true });
 const DB_CLIENT = process.env.DB_CLIENT || "sqlite";
 const isPostgres = DB_CLIENT === "postgres";
 
-let sqlite: Database.Database | null = null;
+type SqliteDatabase = import("better-sqlite3").Database;
+
+let sqlite: SqliteDatabase | null = null;
 let pool: Pool | null = null;
 let initialized = false;
 let initPromise: Promise<void> | null = null;
@@ -47,6 +48,7 @@ async function ensureInit() {
         connectionString?.includes("supabase.co") ||
         connectionString?.includes("pooler.supabase.com");
 
+      const { Pool } = await import("pg");
       pool = new Pool({
         connectionString,
         ssl: useSsl ? { rejectUnauthorized: false } : undefined,
@@ -56,6 +58,7 @@ async function ensureInit() {
         allowExitOnIdle: true
       });
     } else {
+      const Database = (await import("better-sqlite3")).default;
       const dbPath = path.join(dataDir, "stablevault.db");
       sqlite = new Database(dbPath);
       sqlite.pragma("journal_mode = WAL");
