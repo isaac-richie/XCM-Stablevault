@@ -9,6 +9,9 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@polkadot/types": "^16.5.4",
+    "@polkadot/util": "^14.0.2",
+    "@polkadot/util-crypto": "^14.0.2",
     "@privy-io/react-auth": "^3.17.0",
     "@privy-io/wagmi": "^4.0.2",
     "@react-native-async-storage/async-storage": "^3.0.1",
