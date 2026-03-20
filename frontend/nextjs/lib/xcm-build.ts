@@ -58,9 +58,17 @@ function loadCache(cachePath: string): Record<string, CacheEntry> {
 }
 
 function saveCache(cachePath: string, cache: Record<string, CacheEntry>) {
-  const dir = path.dirname(cachePath);
-  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-  fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2) + "\n");
+  try {
+    const dir = path.dirname(cachePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(cachePath, JSON.stringify(cache, null, 2) + "\n");
+  } catch (error: any) {
+    const code = String(error?.code || "");
+    if (code === "EROFS" || code === "EACCES" || code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
 }
 
 export async function buildXcmBytes(args: BuildXcmArgs) {
