@@ -8,7 +8,7 @@ Users can:
 - repay debt
 - earn claimable `mUSD` yield
 - withdraw and unwrap back to native `PAS`
-- queue cross-chain `PAS` transfers through an XCM relayer flow
+- teleport native `PAS` from their own wallet to `People Paseo`
 
 ## What We Built
 
@@ -21,24 +21,24 @@ Users can:
 ### AI Layer
 - deterministic recommendation engine
 - risk-aware action scoring
-- explanation layer with OpenAI fallback support
-- AI decision history and action linkage
-- safe auto-queue gating for eligible bridge actions
+- OpenAI-backed explanation layer with deterministic fallback
+- AI recommendation history with action references
+- advisory-only posture: AI suggests, wallet signs
 
 ### XCM / Bridge
-- working relayer-backed XCM path
-- current live route:
+- direct wallet-funded `PAS` teleport flow
+- current route:
   - origin: `Asset Hub Paseo`
   - destination: `People Paseo`
   - asset: native `PAS`
-  - transport: `limitedTeleportAssets`
 - destination verification and action history
+- original source transaction recorded in request detail
 
-### Frontend + Ops
+### Frontend + Admin
 - polished Next.js vault interface
 - Privy-based wallet flow
-- admin dashboard for queue, AI snapshots, deltas, and action monitoring
-- SQLite-backed local persistence for hackathon/demo use
+- admin dashboard for action history, AI snapshots, and vault monitoring
+- SQLite or Supabase-backed persistence
 
 ## Product Flow
 
@@ -48,18 +48,18 @@ Users can:
 4. Borrow `mUSD`
 5. Claim yield or repay debt
 6. Withdraw collateral and unwrap back to `PAS`
-7. Queue and monitor bridge actions
+7. Teleport `PAS` from the connected wallet
 
 ## Repo Structure
 
 - `/Users/0xhardhat/xcm-stable-vault/contracts`
   - vault, stablecoin, and wrapper contracts
 - `/Users/0xhardhat/xcm-stable-vault/scripts`
-  - deploy, relayer, XCM, and verification scripts
+  - deploy, XCM, and verification scripts
 - `/Users/0xhardhat/xcm-stable-vault/test`
   - contract tests
 - `/Users/0xhardhat/xcm-stable-vault/frontend/nextjs`
-  - production app, worker, APIs, AI engine, and admin UI
+  - production app, APIs, AI engine, and admin UI
 
 ## Local Setup
 
@@ -82,7 +82,6 @@ npm run dev
 Or from the repo root:
 ```bash
 npm run frontend:dev
-npm run frontend:worker
 ```
 
 ## Key Commands
@@ -98,12 +97,11 @@ npm run deploy:hub
 ```bash
 npm run frontend:dev
 npm run frontend:build
-npm run frontend:worker
 ```
 
 ### XCM / Verification
 ```bash
-npm run xcm:teleport-assets
+npm run xcm:execute-eoa
 npm run xcm:verify-people
 npm run xcm:demo-people
 ```
@@ -114,7 +112,6 @@ Important root env values:
 - `HUB_RPC_URL`
 - `HUB_PRIVATE_KEY`
 - `ASSET_HUB_WS_URL`
-- `RELAYER_MNEMONIC`
 - `BENEFICIARY_SS58`
 
 Important frontend env values:
@@ -129,7 +126,7 @@ Important frontend env values:
 For hackathon/demo mode, the frontend backend uses local SQLite by default:
 - `/Users/0xhardhat/xcm-stable-vault/frontend/nextjs/.data/stablevault.db`
 
-It only switches away from SQLite if the DB client is explicitly configured.
+It switches to Postgres when `DB_CLIENT=postgres` is set.
 
 ## Current Status
 
@@ -141,8 +138,9 @@ Working now:
 - unwrap
 - yield claims
 - AI recommendations
-- AI action history
-- XCM queue + verification
+- AI history
+- direct wallet teleport
+- destination verification
 
 Not yet final:
 - cross-chain `mUSD` transfer

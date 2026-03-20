@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyAdminRequest } from "../../../../lib/admin-auth";
-import { getActionSourceStats, getQueueStats, getWorkerStatus } from "../../../../lib/admin-stats";
+import { getActionSourceStats, getQueueStats } from "../../../../lib/admin-stats";
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -11,7 +11,6 @@ export async function POST(request: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    worker: await getWorkerStatus(),
     queue: await getQueueStats(),
     sources: await getActionSourceStats()
   });

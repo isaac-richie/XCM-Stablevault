@@ -1,4 +1,4 @@
-import { queryAll, queryOne, run, transaction } from "./db";
+import { queryAll, queryOne, run } from "./db";
 
 export type ActionStatus =
   | "queued"
@@ -212,33 +212,4 @@ export async function updateAction(id: string, patch: Partial<TeleportAction>) {
   );
 
   return next;
-}
-
-export async function claimNextQueuedAction() {
-  return transaction(async (executor) => {
-    const row = await executor.queryOne<ActionRow>(
-      `SELECT * FROM teleport_actions
-       WHERE status = 'queued'
-       ORDER BY created_at ASC
-       LIMIT 1`
-    );
-
-    if (!row) return null;
-
-    const now = new Date().toISOString();
-    const result = await executor.run(
-      `UPDATE teleport_actions
-       SET status = 'processing', updated_at = ?
-       WHERE id = ? AND status = 'queued'`,
-      [now, row.id]
-    );
-
-    if (result.changes === 0) return null;
-
-    return {
-      ...mapRow(row),
-      status: "processing" as ActionStatus,
-      updatedAt: now
-    };
-  });
 }

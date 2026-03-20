@@ -52,7 +52,7 @@ function mapRow(row: AiDecisionRow): AiDecisionRecord {
     relayerHealth: (row.relayer_health as AiRecommendation["relayerHealth"]) || "healthy",
     vaultUtilization: row.vault_utilization || "0%",
     autoQueueEligible: Boolean(row.auto_queue_eligible),
-    autoQueueReason: row.auto_queue_reason || "Stored decision predates auto-queue metadata.",
+    autoQueueReason: row.auto_queue_reason || "Stored decision predates the latest wallet-execution guidance.",
     linkedActionId: row.linked_action_id || undefined,
     createdAt: row.created_at
   };

@@ -27,8 +27,7 @@
     "xcm:paraspell-people": "node scripts/paraspell-people-transfer.mjs",
     "xcm:demo-people": "ts-node scripts/demo-people.ts",
     "frontend:dev": "npm --prefix frontend/nextjs run dev",
-    "frontend:build": "npm --prefix frontend/nextjs run build",
-    "frontend:worker": "npm --prefix frontend/nextjs run worker"
+    "frontend:build": "npm --prefix frontend/nextjs run build"
   },
   "keywords": [],
   "author": "",

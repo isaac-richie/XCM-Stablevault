@@ -6,8 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "worker": "tsx worker.ts"
+    "lint": "next lint"
   },
   "dependencies": {
     "@privy-io/react-auth": "^3.17.0",

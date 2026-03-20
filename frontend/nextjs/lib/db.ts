@@ -12,6 +12,7 @@ const isPostgres = DB_CLIENT === "postgres";
 let sqlite: Database.Database | null = null;
 let pool: Pool | null = null;
 let initialized = false;
+let initPromise: Promise<void> | null = null;
 
 export type SqlValue = string | number | null;
 
@@ -32,28 +33,44 @@ function toPgPlaceholders(sql: string) {
 
 async function ensureInit() {
   if (initialized) return;
-
-  if (isPostgres) {
-    const connectionString = process.env.DATABASE_URL;
-    const useSsl =
-      process.env.DATABASE_SSLMODE === "require" ||
-      process.env.DATABASE_REQUIRE_SSL === "true" ||
-      connectionString?.includes("supabase.co") ||
-      connectionString?.includes("pooler.supabase.com");
-
-    pool = new Pool({
-      connectionString,
-      ssl: useSsl ? { rejectUnauthorized: false } : undefined
-    });
-  } else {
-    const dbPath = path.join(dataDir, "stablevault.db");
-    sqlite = new Database(dbPath);
-    sqlite.pragma("journal_mode = WAL");
-    sqlite.pragma("busy_timeout = 5000");
+  if (initPromise) {
+    await initPromise;
+    return;
   }
 
-  await applySchema();
-  initialized = true;
+  initPromise = (async () => {
+    if (isPostgres) {
+      const connectionString = process.env.DATABASE_URL;
+      const useSsl =
+        process.env.DATABASE_SSLMODE === "require" ||
+        process.env.DATABASE_REQUIRE_SSL === "true" ||
+        connectionString?.includes("supabase.co") ||
+        connectionString?.includes("pooler.supabase.com");
+
+      pool = new Pool({
+        connectionString,
+        ssl: useSsl ? { rejectUnauthorized: false } : undefined,
+        max: Number(process.env.DATABASE_POOL_MAX || "3"),
+        idleTimeoutMillis: Number(process.env.DATABASE_IDLE_TIMEOUT_MS || "10000"),
+        connectionTimeoutMillis: Number(process.env.DATABASE_CONNECT_TIMEOUT_MS || "10000"),
+        allowExitOnIdle: true
+      });
+    } else {
+      const dbPath = path.join(dataDir, "stablevault.db");
+      sqlite = new Database(dbPath);
+      sqlite.pragma("journal_mode = WAL");
+      sqlite.pragma("busy_timeout = 5000");
+    }
+
+    await applySchema();
+    initialized = true;
+  })();
+
+  try {
+    await initPromise;
+  } finally {
+    initPromise = null;
+  }
 }
 
 async function applySchema() {
@@ -89,13 +106,6 @@ async function applySchema() {
         requester TEXT PRIMARY KEY,
         window_start BIGINT NOT NULL,
         request_count INTEGER NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS worker_status (
-        worker_name TEXT PRIMARY KEY,
-        last_heartbeat_at BIGINT NOT NULL,
-        last_action_id TEXT,
-        last_action_status TEXT,
-        last_error TEXT
       )`,
       `CREATE TABLE IF NOT EXISTS ai_decisions (
         id TEXT PRIMARY KEY,
@@ -182,14 +192,6 @@ async function applySchema() {
       requester TEXT PRIMARY KEY,
       window_start BIGINT NOT NULL,
       request_count INTEGER NOT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS worker_status (
-      worker_name TEXT PRIMARY KEY,
-      last_heartbeat_at BIGINT NOT NULL,
-      last_action_id TEXT,
-      last_action_status TEXT,
-      last_error TEXT
     );
 
     CREATE TABLE IF NOT EXISTS ai_decisions (

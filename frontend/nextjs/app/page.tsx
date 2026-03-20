@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { mockUsdAbi, vaultAbi, wpasAbi } from "../lib/abis";
 import { appConfig } from "../lib/config";
-import { stableVaultDomain, teleportRequestTypes } from "../lib/eip712";
 import type {
   AiDecisionHistoryItem,
   AiExplanationState,
@@ -22,6 +21,11 @@ import { useWalletUi } from "../lib/wallet-ui";
 // Privy-selected wallet signer instead, so this provider can stay static.
 const readProvider = new JsonRpcProvider(appConfig.rpcUrl, { chainId: appConfig.chainId, name: appConfig.chainName }, { staticNetwork: true });
 const SUPPRESS_WALLET_KEY = "stablevault:suppress-wallet";
+const XCM_PRECOMPILE_ADDRESS = "0x00000000000000000000000000000000000a0000";
+const xcmPrecompileAbi = [
+  "function weighMessage(bytes message) view returns (tuple(uint64 refTime, uint64 proofSize) weight)",
+  "function execute(bytes message, tuple(uint64 refTime, uint64 proofSize) weight)"
+];
 
 
 const initialState: DashboardState = {
@@ -104,6 +108,10 @@ function formatMaxAmount(value: bigint | null | undefined) {
   return formatted.replace(/\.?0+$/, "").replace(/\.$/, "");
 }
 
+function isLikelySs58(value: string) {
+  return /^[1-9A-HJ-NP-Za-km-z]{20,}$/.test(value.trim());
+}
+
 export default function Page() {
   const [state, setState] = useState<DashboardState>(initialState);
   const [wrapAmount, setWrapAmount] = useState("0.25");
@@ -120,6 +128,7 @@ export default function Page() {
   const [aiRecommendation, setAiRecommendation] = useState<AiRecommendationView | null>(null);
   const [aiHistory, setAiHistory] = useState<AiDecisionHistoryItem[]>([]);
   const [aiExplanation, setAiExplanation] = useState<AiExplanationState>(null);
+  const [appliedAiDecisionId, setAppliedAiDecisionId] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [accountMenuOpen, setAccountMenuOpen] = useState(false);
@@ -255,6 +264,8 @@ export default function Page() {
   const hasPendingActions = actions.some((item) =>
     ["queued", "processing", "dispatched"].includes(item.status)
   );
+  const normalizedBeneficiary = beneficiary.trim();
+  const beneficiaryValid = isLikelySs58(normalizedBeneficiary);
 
   // Withdrawals are debt-aware: once a user borrows mUSD, part of their collateral
   // becomes locked until the position is repaid back into a safe state.
@@ -269,10 +280,21 @@ export default function Page() {
     return state.vaultShares - requiredCollateral;
   }, [state.collateralFactorBps, state.stableDebt, state.vaultShares]);
   const linkedAiAction = useMemo(() => {
-    if (!aiRecommendation) return null;
+    if (appliedAiDecisionId) {
+      return actions.find((action) => action.aiDecisionId === appliedAiDecisionId) || null;
+    }
     return actions.find((action) => action.aiDecisionId && aiHistory.some((decision) => decision.id === action.aiDecisionId)) || null;
-  }, [actions, aiHistory, aiRecommendation]);
+  }, [actions, aiHistory, appliedAiDecisionId]);
   const latestAiDecision = aiHistory[0] || null;
+  const aiRecipientDisplay = useMemo(
+    () =>
+      aiRecommendation?.beneficiary ||
+      latestAiDecision?.beneficiary ||
+      normalizedBeneficiary ||
+      appConfig.peopleBeneficiary ||
+      "",
+    [aiRecommendation?.beneficiary, latestAiDecision?.beneficiary, normalizedBeneficiary]
+  );
 
   const loadState = useCallback(
     async (activeAccount?: string | null) => {
@@ -372,15 +394,18 @@ export default function Page() {
         return;
       }
 
+      setBusy("Connect wallet");
+
       await walletUi.connect();
       if (typeof window !== "undefined") {
         window.sessionStorage.removeItem(SUPPRESS_WALLET_KEY);
       }
       setWalletSuppressed(false);
+      setMobileNavOpen(false);
 
       setLog({
         title: "Wallet ready",
-        body: `Connect with Privy to continue on ${appConfig.chainName}.`,
+        body: `Wallet connected. You can continue on ${appConfig.chainName}.`,
         kind: "success"
       });
     } catch (error: any) {
@@ -389,6 +414,8 @@ export default function Page() {
         body: getWalletErrorMessage(error),
         kind: "error"
       });
+    } finally {
+      setBusy(null);
     }
   }, [walletUi]);
 
@@ -654,98 +681,133 @@ export default function Page() {
   const requestTeleport = useCallback(async (options?: {
     amount?: string;
     beneficiary?: string;
-    aiInitiated?: boolean;
-    aiDecisionId?: string;
   }) => {
     if (!account) return;
 
     try {
       const requestedAmount = options?.amount || teleportAmount;
-      const requestedBeneficiary = options?.beneficiary || beneficiary;
-      setBusy(options?.aiInitiated ? "Queue AI action" : "Request teleport");
-      const signer = await getEthersSigner(walletUi, account);
-      const timestamp = Date.now();
-      const nonceResponse = await fetch(`/api/actions/nonce?requester=${account}`);
-      const noncePayload = await nonceResponse.json();
-      if (!nonceResponse.ok || !noncePayload.ok) {
-        throw new Error(noncePayload.error || "Unable to issue request nonce");
-      }
-      const nonce = noncePayload.nonce as string;
+      const requestedBeneficiary = (options?.beneficiary || beneficiary).trim();
 
-      // Bridge requests are signed off-chain with EIP-712 so the backend can verify
-      // that the queue request really came from the connected wallet.
+      if (!requestedBeneficiary) {
+        setLog({
+          title: "Recipient required",
+          body: "Add a People recipient address before requesting a teleport.",
+          kind: "error"
+        });
+        return;
+      }
+
+      if (!isLikelySs58(requestedBeneficiary)) {
+        setLog({
+          title: "Invalid recipient",
+          body: "Recipient must be a valid SS58-like People address.",
+          kind: "error"
+        });
+        return;
+      }
+
+      const signer = await getEthersSigner(walletUi, account);
+      setBusy("Request teleport");
       setLog({
-        title: "Sign request",
-        body: "Sign the teleport request so the backend can bind this action to your wallet.",
+        title: "Prepare teleport",
+        body: "Building the XCM payload for your wallet-funded transfer.",
         kind: "idle"
       });
 
-      const signature = await signer.signTypedData(stableVaultDomain, teleportRequestTypes, {
-        requester: account,
-        beneficiary: requestedBeneficiary,
-        amount: requestedAmount,
-        timestamp,
-        nonce
+      const prepareResponse = await fetch("/api/actions/teleport/prepare", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          requester: account,
+          beneficiary: requestedBeneficiary,
+          amount: requestedAmount
+        })
       });
-      const response = await fetch("/api/actions/teleport", {
+      const preparePayload = await prepareResponse.json();
+      if (!prepareResponse.ok || !preparePayload.ok) {
+        throw new Error(preparePayload.error || "Unable to prepare teleport");
+      }
+
+      const xcmPrecompile = new Contract(XCM_PRECOMPILE_ADDRESS, xcmPrecompileAbi, signer);
+
+      setLog({
+        title: "Confirm teleport",
+        body: "Approve the XCM transfer in your wallet. PAS will be sent from your connected wallet.",
+        kind: "idle"
+      });
+
+      const weight = await xcmPrecompile.weighMessage(preparePayload.payload.messageHex);
+      const tx = await xcmPrecompile.execute(
+        preparePayload.payload.messageHex,
+        {
+          refTime: weight.refTime,
+          proofSize: weight.proofSize
+        },
+        {
+        gasLimit: 800000
+        }
+      );
+
+      pushToast("Teleport submitted", `Transaction hash: ${tx.hash}`, "success");
+      await tx.wait();
+
+      const recordResponse = await fetch("/api/actions/teleport/record", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           requester: account,
           beneficiary: requestedBeneficiary,
           amount: requestedAmount,
-          timestamp,
-          nonce,
-          signature,
-          aiInitiated: options?.aiInitiated || false,
-          aiDecisionId: options?.aiDecisionId
+          txHash: tx.hash,
+          beforeBalance: preparePayload.payload.beforeBalance,
+          aiDecisionId: appliedAiDecisionId || undefined
         })
       });
+      const recordPayload = await recordResponse.json();
 
-      const payload = await response.json();
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Teleport request failed");
-      }
-
-      setLog({
-        title: options?.aiInitiated ? "AI action queued" : "Teleport queued",
-        body: `Action ${payload.action?.id || ""} entered the worker queue. Status will refresh automatically.`,
-        kind: "success"
-      });
-      await Promise.all([
+      await loadState(account);
+      await Promise.allSettled([
         loadActions(account),
         loadAiRecommendation(account),
         loadAiHistory(account),
         loadAiExplanation(account)
       ]);
-      setSelectedAction(payload.action || null);
+
+      if (recordResponse.ok && recordPayload.ok) {
+        setSelectedAction(recordPayload.action || null);
+        if (recordPayload.action?.aiDecisionId) {
+          setAppliedAiDecisionId(recordPayload.action.aiDecisionId);
+        }
+      }
+
+      setLog({
+        title: "Teleport sent",
+        body: recordResponse.ok && recordPayload.ok
+          ? `Sent ${requestedAmount} PAS from your wallet. History has been updated.`
+          : `Sent ${requestedAmount} PAS from your wallet. History could not be updated automatically.`,
+        kind: "success"
+      });
+      pushToast(
+        "Teleport confirmed",
+        `Included on ${appConfig.chainName}.`,
+        "success"
+      );
     } catch (error: any) {
       setLog({
-        title: options?.aiInitiated ? "AI queue failed" : "Teleport request failed",
+        title: "Teleport request failed",
         body: getWalletErrorMessage(error),
         kind: "error"
       });
     } finally {
       setBusy(null);
     }
-  }, [account, beneficiary, loadActions, loadAiExplanation, loadAiHistory, loadAiRecommendation, teleportAmount, walletUi]);
-
-  const queueAiAction = useCallback(async () => {
-    if (!aiRecommendation) return;
-    // We link the queued bridge action back to the latest AI snapshot so the admin
-    // surface can show "what the AI recommended" versus "what actually executed".
-    await requestTeleport({
-      amount: aiRecommendation.suggestedAmountPas,
-      beneficiary: aiRecommendation.beneficiary,
-      aiInitiated: true,
-      aiDecisionId: aiHistory[0]?.id
-    });
-  }, [aiHistory, aiRecommendation, requestTeleport]);
+  }, [account, beneficiary, loadActions, loadAiExplanation, loadAiHistory, loadAiRecommendation, loadState, pushToast, teleportAmount, walletUi]);
 
   const applyAiSuggestion = useCallback(() => {
     if (!aiRecommendation) return;
 
     setBeneficiary(aiRecommendation.beneficiary);
+    setAppliedAiDecisionId(latestAiDecision?.id || null);
     if (aiRecommendation.action === "teleport") {
       setTeleportAmount(aiRecommendation.suggestedAmountPas);
       pushToast(
@@ -761,7 +823,7 @@ export default function Page() {
       body: aiRecommendation.explanation,
       kind: aiRecommendation.action === "review-risk" ? "error" : "idle"
     });
-  }, [aiRecommendation, pushToast]);
+  }, [aiRecommendation, latestAiDecision, pushToast]);
 
   const triggerServerAction = useCallback(
     async (path: string, title: string) => {
@@ -769,7 +831,7 @@ export default function Page() {
         setBusy(title);
         setLog({
           title,
-          body: "Running local relayer command on the Next server.",
+          body: "Running a local verification helper on the Next server.",
           kind: "idle"
         });
         const response = await fetch(path, { method: "POST" });
@@ -923,6 +985,19 @@ export default function Page() {
     return log.kind === "idle" || log.kind === "error";
   }, [log.kind, logDismissed]);
 
+  const aiHeadline = aiRecommendation?.action || (walletSessionReady ? "unavailable" : "hold");
+  const aiHeroCopy = aiRecommendation
+    ? `${aiRecommendation.suggestedAmountPas} PAS · ${aiRecommendation.posture} posture`
+    : walletSessionReady
+      ? "Live recommendation unavailable right now. Refresh the AI panel to retry."
+      : "Connect a wallet to load your live recommendation.";
+  const aiInsightFallback = walletSessionReady
+    ? "The AI recommendation could not be loaded for this wallet right now."
+    : "The AI watches your vault position and system conditions.";
+  const aiReasonsFallback = walletSessionReady
+    ? "Use Refresh to retry after your latest vault action settles."
+    : "Recommendations will appear after wallet state loads.";
+
   return (
     <main className="app-shell">
       {toast ? (
@@ -1019,8 +1094,14 @@ export default function Page() {
           </div>
           <div className="vault-nav-actions">
             {!walletSessionReady ? (
-              <button className="primary" onClick={connectWallet} disabled={walletBooting}>
-                {walletBooting ? "Loading wallets..." : walletSuppressed && walletReady ? "Reconnect Wallet" : "Connect Wallet"}
+              <button className="primary" onClick={connectWallet} disabled={walletBooting || busy === "Connect wallet"}>
+                {walletBooting
+                  ? "Loading wallets..."
+                  : busy === "Connect wallet"
+                    ? "Opening wallet..."
+                    : walletSuppressed && walletReady
+                      ? "Reconnect Wallet"
+                      : "Connect Wallet"}
               </button>
             ) : (
               <div className="account-menu" ref={accountMenuRef}>
@@ -1132,12 +1213,17 @@ export default function Page() {
                 type="button"
                 className="primary wide"
                 onClick={() => {
-                  setMobileNavOpen(false);
                   void connectWallet();
                 }}
-                disabled={walletBooting}
+                disabled={walletBooting || busy === "Connect wallet"}
               >
-                {walletBooting ? "Loading wallets..." : walletSuppressed && walletReady ? "Reconnect Wallet" : "Connect Wallet"}
+                {walletBooting
+                  ? "Loading wallets..."
+                  : busy === "Connect wallet"
+                    ? "Opening wallet..."
+                    : walletSuppressed && walletReady
+                      ? "Reconnect Wallet"
+                      : "Connect Wallet"}
               </button>
             ) : (
               <>
@@ -1448,7 +1534,7 @@ export default function Page() {
           <div className="panel-head">
             <div>
               <h2>Bridge</h2>
-              <p>Queue a native PAS transfer to People and verify settlement on the destination chain.</p>
+              <p>Send native PAS from your wallet to People and track the resulting cross-chain transfer.</p>
             </div>
           </div>
 
@@ -1460,10 +1546,6 @@ export default function Page() {
             <div className="bridge-fact-card">
               <span>Route</span>
               <strong>Asset Hub to People</strong>
-            </div>
-            <div className="bridge-fact-card">
-              <span>Method</span>
-              <strong>limitedTeleportAssets</strong>
             </div>
             <div className="bridge-fact-card">
               <span>Stablecoin</span>
@@ -1482,6 +1564,9 @@ export default function Page() {
             <label className="field">
               <span>Recipient address</span>
               <input value={beneficiary} onChange={(e) => setBeneficiary(e.target.value)} />
+              {normalizedBeneficiary && !beneficiaryValid ? (
+                <small className="field-note error">Enter a valid People SS58 address.</small>
+              ) : null}
             </label>
             <label className="field">
               <span className="field-head">
@@ -1495,10 +1580,10 @@ export default function Page() {
           <div className="button-row top-gap">
             <button
               className="primary"
-              disabled={!walletSessionReady || !correctNetwork || busy !== null}
+              disabled={!walletSessionReady || !correctNetwork || busy !== null || !beneficiaryValid}
               onClick={() => void requestTeleport()}
             >
-              {busy === "Request teleport" ? "Requesting..." : "Request Teleport"}
+              {busy === "Request teleport" ? "Sending..." : "Teleport PAS"}
             </button>
             <button
               className="secondary"
@@ -1531,24 +1616,13 @@ export default function Page() {
               >
                 Apply
               </button>
-              <button
-                className="secondary compact"
-                disabled={!aiRecommendation?.autoQueueEligible || !walletSessionReady || !correctNetwork || busy !== null}
-                onClick={queueAiAction}
-              >
-                {busy === "Queue AI action" ? "Queueing..." : "Queue"}
-              </button>
             </div>
           </div>
           <div className="ai-hero">
             <div className="ai-hero-main">
               <span className="ai-hero-label">Vault Copilot</span>
-              <strong>{aiRecommendation?.action || "hold"}</strong>
-              <p>
-                {aiRecommendation
-                  ? `${aiRecommendation.suggestedAmountPas} PAS · ${aiRecommendation.posture} posture`
-                  : "Connect a wallet to load your live recommendation."}
-              </p>
+              <strong>{aiHeadline}</strong>
+              <p>{aiHeroCopy}</p>
             </div>
             <div className="ai-hero-stats">
               <div className="ai-stat">
@@ -1556,12 +1630,12 @@ export default function Page() {
                 <strong>{aiRecommendation ? `${aiRecommendation.score}/100` : "--"}</strong>
               </div>
               <div className="ai-stat">
-                <span>Execution</span>
+                <span>Readiness</span>
                 <strong>{aiRecommendation?.executionReadiness || "--"}</strong>
               </div>
               <div className="ai-stat">
-                <span>Relayer</span>
-                <strong>{aiRecommendation?.relayerHealth || "--"}</strong>
+                <span>Transfer path</span>
+                <strong>wallet</strong>
               </div>
             </div>
           </div>
@@ -1571,7 +1645,7 @@ export default function Page() {
               <strong>{aiRecommendation ? `${aiRecommendation.suggestedAmountPas} PAS` : "--"}</strong>
             </div>
             <div className="ai-micro-card">
-              <span>Queue pressure</span>
+              <span>Recent activity</span>
               <strong>{aiRecommendation?.queuePressure || "--"}</strong>
             </div>
             <div className="ai-micro-card">
@@ -1579,13 +1653,13 @@ export default function Page() {
               <strong>{aiRecommendation?.vaultUtilization || "--"}</strong>
             </div>
             <div className="ai-micro-card">
-              <span>Recipient policy</span>
-              <strong>{shortAddress(aiRecommendation?.beneficiary)}</strong>
+              <span>Recipient</span>
+              <strong>{shortAddress(aiRecipientDisplay)}</strong>
             </div>
           </div>
           <div className="ai-link-strip top-gap">
             <div className="ai-link-card">
-              <span>Latest AI snapshot</span>
+              <span>Latest AI note</span>
               <strong>
                 {latestAiDecision ? (
                   <button
@@ -1606,7 +1680,7 @@ export default function Page() {
               </strong>
             </div>
             <div className="ai-link-card">
-              <span>Linked queued action</span>
+              <span>Recent bridge</span>
               <strong>
                 {linkedAiAction ? (
                   <button
@@ -1621,23 +1695,17 @@ export default function Page() {
                 )}
               </strong>
             </div>
-            <div className="ai-link-card">
-              <span>Execution source</span>
-              <strong className={`badge-inline ${linkedAiAction?.source || "user"}`}>
-                {linkedAiAction?.source || "--"}
-              </strong>
-            </div>
           </div>
           <div className="ai-story-grid top-gap">
             <div className="log-box ai-insight-box">
-              <strong>{aiRecommendation?.explanation || "The AI watches your vault position and system conditions."}</strong>
-              <pre>{aiRecommendation ? aiRecommendation.reasons.join("\n") : "Recommendations will appear after wallet state loads."}</pre>
+              <strong>{aiRecommendation?.explanation || aiInsightFallback}</strong>
+              <pre>{aiRecommendation ? aiRecommendation.reasons.join("\n") : aiReasonsFallback}</pre>
             </div>
             <div className="log-box ai-policy-box">
               <strong>Why It Helps</strong>
               <pre>
                 {aiRecommendation?.autoQueueReason ||
-                  "The AI checks vault posture, queue pressure, and relayer health before suggesting the next move."}
+                  "The AI checks wallet posture, vault state, and recent bridge activity before suggesting the next move."}
               </pre>
             </div>
           </div>
@@ -1702,7 +1770,7 @@ export default function Page() {
           <div className="panel-head">
             <div>
               <h2>Bridge History</h2>
-              <p>Recent bridge requests, current status, and linked AI source when present.</p>
+              <p>Recent bridge requests and their current status.</p>
             </div>
             <div className="button-row">
               <button
@@ -1733,7 +1801,7 @@ export default function Page() {
           </div>
           <div className="activity-table">
             <div className="activity-row activity-head user-activity-grid">
-              <span>Source</span>
+              <span>Wallet</span>
               <span>Status</span>
               <span>Amount</span>
               <span>Recipient</span>
@@ -1747,8 +1815,11 @@ export default function Page() {
                   className={`activity-row user-activity-grid ${selectedAction?.id === action.id ? "activity-row-selected" : ""}`}
                   key={action.id}
                 >
-                  <span className="activity-cell" data-label="Source">
-                    <span className={`badge-inline ${action.source || "user"}`}>{action.source || "user"}</span>
+                  <span className="activity-cell" data-label="Wallet">
+                    <span className="activity-address-stack">
+                      <strong>{shortAddress(action.requester || activeSessionAccount)}</strong>
+                      {action.source === "ai" ? <span className="badge-inline ai">AI</span> : null}
+                    </span>
                   </span>
                   <span className="activity-cell" data-label="Status">
                     <ActionBadge status={action.status} />
@@ -1787,6 +1858,10 @@ export default function Page() {
           </div>
           <div className="strategy-box">
             <div className="strategy-line">
+              <span>Wallet</span>
+              <strong>{shortAddress(selectedAction?.requester || activeSessionAccount)}</strong>
+            </div>
+            <div className="strategy-line">
               <span>Status</span>
               <strong>{selectedAction?.status || "--"}</strong>
             </div>
@@ -1795,19 +1870,38 @@ export default function Page() {
               <strong>{shortAddress(selectedAction?.beneficiary)}</strong>
             </div>
             <div className="strategy-line">
-              <span>Source</span>
-              <strong>{selectedAction?.source || "--"}</strong>
-            </div>
-            <div className="strategy-line">
               <span>Amount</span>
               <strong>{selectedAction ? `${selectedAction.amountDisplay} PAS` : "--"}</strong>
             </div>
             <div className="strategy-line">
-              <span>Linked AI snapshot</span>
-              <strong>{selectedAction?.aiDecisionId ? shortAddress(selectedAction.aiDecisionId) : "--"}</strong>
+              <span>Linked AI note</span>
+              <strong>
+                {selectedAction?.aiDecisionId ? (
+                  <button
+                    type="button"
+                    className="inline-link-button"
+                    onClick={() => {
+                      const linkedDecision = aiHistory.find((item) => item.id === selectedAction.aiDecisionId);
+                      if (linkedDecision) {
+                        pushToast(
+                          "Linked AI snapshot",
+                          `${linkedDecision.action} · ${linkedDecision.score}/100 · ${new Date(linkedDecision.createdAt).toLocaleString()}`,
+                          "success"
+                        );
+                      } else {
+                        pushToast("Linked AI snapshot", selectedAction.aiDecisionId || "--", "success");
+                      }
+                    }}
+                  >
+                    {shortAddress(selectedAction.aiDecisionId)}
+                  </button>
+                ) : (
+                  "--"
+                )}
+              </strong>
             </div>
             <div className="strategy-line">
-              <span>Origin tx</span>
+              <span>Original tx</span>
               <strong>
                 {selectedAction?.originTxHash ? (
                   <a
@@ -1825,12 +1919,12 @@ export default function Page() {
             </div>
           </div>
           <div className="log-box top-gap">
-            <strong>User diagnostics</strong>
+            <strong>Status note</strong>
             <pre>
               {selectedAction?.status === "failed"
                 ? "This request failed. Review beneficiary format, request quotas, or destination settlement status."
                 : selectedAction
-                  ? "Request accepted. Status will update automatically while the worker processes it."
+                  ? "Request recorded. Refresh after finality if you want to confirm destination settlement again."
                   : "Select a bridge action to inspect its current state."}
             </pre>
           </div>

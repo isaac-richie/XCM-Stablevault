@@ -25,7 +25,6 @@ export default function AdminActionDetail({
 }) {
   const [id, setId] = useState<string>("");
   const [action, setAction] = useState<ActionDetail | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
   const [message, setMessage] = useState("Connect an admin wallet to inspect this action.");
   const walletUi = useWalletUi();
   const account = walletUi.account;
@@ -61,29 +60,6 @@ export default function AdminActionDetail({
     setMessage("Action detail loaded.");
   }, [account, getWalletProvider, id]);
 
-  const retryAction = useCallback(async () => {
-    if (!account || !id) return;
-    try {
-      setBusy("retry");
-      const auth = await signAdminPayload(await getWalletProvider(), account, "retry-action");
-      const response = await fetch(`/api/admin/actions/${id}/retry`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(auth)
-      });
-      const payload = await response.json();
-      if (!response.ok || !payload.ok) {
-        throw new Error(payload.error || "Retry failed");
-      }
-      setMessage(`Action ${id} moved back to the queue.`);
-      await loadDetail();
-    } catch (error: any) {
-      setMessage(error?.message || "Retry failed.");
-    } finally {
-      setBusy(null);
-    }
-  }, [account, getWalletProvider, id, loadDetail]);
-
   useEffect(() => {
     if (!account || !correctNetwork || !id) return;
     void loadDetail().catch((error) => {
@@ -110,7 +86,7 @@ export default function AdminActionDetail({
               Switch Network
             </button>
           ) : (
-            <button className="primary" onClick={() => loadDetail()}>
+            <button className="primary" onClick={() => void loadDetail()}>
               Refresh Detail
             </button>
           )}
@@ -144,7 +120,7 @@ export default function AdminActionDetail({
           <div className="panel-head">
             <div>
               <h2>Lifecycle</h2>
-              <p>Origin dispatch, destination settlement, and failure context.</p>
+              <p>Origin transaction, destination balance check, and failure context.</p>
             </div>
           </div>
           <div className="data-grid">
@@ -169,8 +145,8 @@ export default function AdminActionDetail({
         <article className="panel">
           <div className="panel-head">
             <div>
-              <h2>Controls</h2>
-              <p>Operator actions for this request.</p>
+              <h2>References</h2>
+              <p>Explorer links and record metadata for this teleport.</p>
             </div>
           </div>
           <div className="strategy-box">
@@ -191,15 +167,6 @@ export default function AdminActionDetail({
                 )}
               </strong>
             </div>
-          </div>
-          <div className="button-row top-gap">
-            <button
-              className="secondary"
-              disabled={action?.status !== "failed" || busy === "retry"}
-              onClick={retryAction}
-            >
-              {busy === "retry" ? "Retrying..." : "Retry Action"}
-            </button>
           </div>
           <div className="log-box top-gap">
             <strong>Admin status</strong>

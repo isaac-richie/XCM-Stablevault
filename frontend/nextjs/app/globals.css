@@ -946,6 +946,18 @@ h1 {
   display: block;
 }
 
+.field-note {
+  display: block;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.field-note.error {
+  color: #fca5a5;
+}
+
 .field-head {
   display: flex;
   align-items: center;
@@ -1283,6 +1295,12 @@ button:disabled {
 .inline-link-button:hover {
   text-decoration: underline;
   transform: none;
+}
+
+.activity-address-stack {
+  display: inline-grid;
+  gap: 6px;
+  justify-items: start;
 }
 
 .strategy-line,

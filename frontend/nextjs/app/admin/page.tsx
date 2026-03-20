@@ -10,7 +10,11 @@ import { signAdminPayload } from "../../lib/frontend-utils";
 import { shortAddress } from "../../lib/format";
 import { useWalletUi } from "../../lib/wallet-ui";
 
-const readProvider = new JsonRpcProvider(appConfig.rpcUrl, { chainId: appConfig.chainId, name: appConfig.chainName }, { staticNetwork: true });
+const readProvider = new JsonRpcProvider(
+  appConfig.rpcUrl,
+  { chainId: appConfig.chainId, name: appConfig.chainName },
+  { staticNetwork: true }
+);
 
 type AiDecisionDelta = {
   requester: string;
@@ -21,7 +25,6 @@ type AiDecisionDelta = {
   scoreDelta: number | null;
   postureChanged: boolean;
   actionChanged: boolean;
-  autoQueueChanged: boolean;
   summary: string;
 };
 
@@ -35,13 +38,6 @@ export default function AdminPage() {
   const [page, setPage] = useState(0);
   const [total, setTotal] = useState(0);
   const [health, setHealth] = useState<{
-    worker: {
-      workerName: string;
-      lastHeartbeatAt: number;
-      lastActionId?: string | null;
-      lastActionStatus?: string | null;
-      lastError?: string | null;
-    } | null;
     queue: {
       queued: number;
       processing: number;
@@ -59,20 +55,8 @@ export default function AdminPage() {
       aiFailed: number;
       aiSettled: number;
     } | null;
-  }>({ worker: null, queue: null, sources: null });
-  const [relayer, setRelayer] = useState<{
-    address?: string;
-    free?: string;
-    reserved?: string;
-    nonce?: string;
-    existentialDeposit?: string;
-    warningThreshold?: string;
-    connected: boolean;
-    status: string;
-    error?: string;
-  } | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [message, setMessage] = useState("Connect an admin wallet to access the queue monitor.");
+  }>({ queue: null, sources: null });
+  const [message, setMessage] = useState("Connect an admin wallet to inspect vault activity.");
   const walletUi = useWalletUi();
   const account = walletUi.account;
   const chainId = walletUi.chainId;
@@ -82,9 +66,6 @@ export default function AdminPage() {
     !!account &&
     ((owner && account.toLowerCase() === owner.toLowerCase()) ||
       (aiOperator && account.toLowerCase() === aiOperator.toLowerCase()));
-  const pendingExists = actions.some((item) =>
-    ["queued", "processing", "dispatched"].includes(item.status)
-  );
   const limit = 10;
 
   const getWalletProvider = useCallback(async () => {
@@ -130,7 +111,7 @@ export default function AdminPage() {
 
   const loadHealth = useCallback(async () => {
     if (!account || !isAdmin) {
-      setHealth({ worker: null, queue: null, sources: null });
+      setHealth({ queue: null, sources: null });
       return;
     }
 
@@ -145,29 +126,9 @@ export default function AdminPage() {
       throw new Error(payload.error || "Unable to load admin health");
     }
     setHealth({
-      worker: payload.worker || null,
       queue: payload.queue || null,
       sources: payload.sources || null
     });
-  }, [account, getWalletProvider, isAdmin]);
-
-  const loadRelayer = useCallback(async () => {
-    if (!account || !isAdmin) {
-      setRelayer(null);
-      return;
-    }
-
-    const auth = await signAdminPayload(await getWalletProvider(), account, "relayer-status");
-    const response = await fetch("/api/admin/relayer-status", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(auth)
-    });
-    const payload = await response.json();
-    if (!response.ok || !payload.ok) {
-      throw new Error(payload.error || "Unable to load relayer status");
-    }
-    setRelayer(payload.relayer || null);
   }, [account, getWalletProvider, isAdmin]);
 
   const loadAiDecisions = useCallback(async () => {
@@ -189,66 +150,36 @@ export default function AdminPage() {
     setAiDecisions(payload.decisions || []);
   }, [account, getWalletProvider, isAdmin]);
 
-  const retryAction = useCallback(
-    async (id: string) => {
-      if (!account) return;
-      try {
-        setBusy(id);
-        const auth = await signAdminPayload(await getWalletProvider(), account, "retry-action");
-        const response = await fetch(`/api/admin/actions/${id}/retry`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(auth)
-        });
-        const payload = await response.json();
-        if (!response.ok || !payload.ok) {
-          throw new Error(payload.error || "Retry failed");
-        }
-        setMessage(`Action ${id} moved back to the queue.`);
-        await loadActions();
-      } catch (error: any) {
-        setMessage(error?.message || "Retry failed.");
-      } finally {
-        setBusy(null);
-      }
-    },
-    [account, getWalletProvider, loadActions]
-  );
-
   useEffect(() => {
     void loadAdminState();
   }, [loadAdminState]);
 
   useEffect(() => {
     if (!isAdmin) {
-      if (account) {
-        setMessage("Connected wallet is not the vault owner or AI operator.");
-      }
+      if (account) setMessage("Connected wallet is not the vault owner or AI operator.");
       return;
     }
     setMessage("Admin access granted.");
     void loadActions();
     void loadHealth();
-    void loadRelayer();
     void loadAiDecisions();
-  }, [account, isAdmin, loadActions, loadHealth, loadRelayer, loadAiDecisions]);
+  }, [account, isAdmin, loadActions, loadHealth, loadAiDecisions]);
 
   useEffect(() => {
-    if (!isAdmin || !pendingExists) return;
+    if (!isAdmin) return;
     const timer = window.setInterval(() => {
       void loadActions();
       void loadHealth();
-      void loadRelayer();
       void loadAiDecisions();
-    }, 5000);
+    }, 7000);
     return () => window.clearInterval(timer);
-  }, [isAdmin, loadActions, loadHealth, loadRelayer, loadAiDecisions, pendingExists]);
+  }, [isAdmin, loadActions, loadHealth, loadAiDecisions]);
 
   const heading = useMemo(() => {
     if (!account) return "Admin access";
     if (!correctNetwork) return "Switch to Polkadot Hub TestNet";
     if (!isAdmin) return "Unauthorized wallet";
-    return "Queue monitor";
+    return "Operations Monitor";
   }, [account, correctNetwork, isAdmin]);
 
   const aiDecisionDeltas = useMemo<AiDecisionDelta[]>(() => {
@@ -272,9 +203,6 @@ export default function AdminPage() {
         const scoreDelta = previous ? latest.score - previous.score : null;
         const postureChanged = previous ? latest.posture !== previous.posture : false;
         const actionChanged = previous ? latest.action !== previous.action : false;
-        const autoQueueChanged = previous
-          ? latest.autoQueueEligible !== previous.autoQueueEligible
-          : false;
 
         const notes: string[] = [];
         if (scoreDelta !== null && scoreDelta !== 0) {
@@ -286,11 +214,6 @@ export default function AdminPage() {
         if (postureChanged && previous) {
           notes.push(`posture ${previous.posture} -> ${latest.posture}`);
         }
-        if (autoQueueChanged) {
-          notes.push(
-            latest.autoQueueEligible ? "auto-queue became eligible" : "auto-queue now requires review"
-          );
-        }
 
         return {
           requester,
@@ -301,13 +224,12 @@ export default function AdminPage() {
           scoreDelta,
           postureChanged,
           actionChanged,
-          autoQueueChanged,
           summary: notes.join(" | ") || "No material change from the previous snapshot."
         };
       })
       .sort((a, b) => {
-        const aMagnitude = Math.abs(a.scoreDelta ?? 0) + (a.actionChanged ? 5 : 0) + (a.autoQueueChanged ? 3 : 0);
-        const bMagnitude = Math.abs(b.scoreDelta ?? 0) + (b.actionChanged ? 5 : 0) + (b.autoQueueChanged ? 3 : 0);
+        const aMagnitude = Math.abs(a.scoreDelta ?? 0) + (a.actionChanged ? 5 : 0);
+        const bMagnitude = Math.abs(b.scoreDelta ?? 0) + (b.actionChanged ? 5 : 0);
         return bMagnitude - aMagnitude;
       })
       .slice(0, 6);
@@ -330,8 +252,8 @@ export default function AdminPage() {
               Switch Network
             </button>
           ) : (
-            <button className="primary" onClick={() => loadActions()}>
-              Refresh Queue
+            <button className="primary" onClick={() => void Promise.all([loadActions(), loadHealth(), loadAiDecisions()])}>
+              Refresh Monitor
             </button>
           )}
           <Link className="secondaryLink" href="/">
@@ -361,46 +283,15 @@ export default function AdminPage() {
 
       {isAdmin ? (
         <section className="summary-grid admin-summary">
-          <Metric
-            label="Queued"
-            value={String(health.queue?.queued ?? 0)}
-          />
-          <Metric
-            label="Processing"
-            value={String(health.queue?.processing ?? 0)}
-          />
-          <Metric
-            label="Dispatched"
-            value={String(health.queue?.dispatched ?? 0)}
-          />
-          <Metric
-            label="Failed"
-            value={String(health.queue?.failed ?? 0)}
-          />
-          <Metric
-            label="Settled"
-            value={String(health.queue?.settled ?? 0)}
-          />
-          <Metric
-            label="Worker"
-            value={health.worker?.lastActionStatus || "unknown"}
-          />
-          <Metric
-            label="AI Actions"
-            value={String(health.sources?.aiTotal ?? 0)}
-          />
-          <Metric
-            label="AI Pending"
-            value={String(health.sources?.aiPending ?? 0)}
-          />
-          <Metric
-            label="AI Failed"
-            value={String(health.sources?.aiFailed ?? 0)}
-          />
-          <Metric
-            label="AI Settled"
-            value={String(health.sources?.aiSettled ?? 0)}
-          />
+          <Metric label="Queued" value={String(health.queue?.queued ?? 0)} />
+          <Metric label="Processing" value={String(health.queue?.processing ?? 0)} />
+          <Metric label="Dispatched" value={String(health.queue?.dispatched ?? 0)} />
+          <Metric label="Failed" value={String(health.queue?.failed ?? 0)} />
+          <Metric label="Settled" value={String(health.queue?.settled ?? 0)} />
+          <Metric label="User Actions" value={String(health.sources?.userTotal ?? 0)} />
+          <Metric label="User Pending" value={String(health.sources?.userPending ?? 0)} />
+          <Metric label="User Failed" value={String(health.sources?.userFailed ?? 0)} />
+          <Metric label="AI Notes" value={String(aiDecisions.length)} />
         </section>
       ) : null}
 
@@ -408,72 +299,30 @@ export default function AdminPage() {
         <article className="panel span-2">
           <div className="panel-head">
             <div>
-              <h2>Queue Monitor</h2>
-              <p>All cross-chain actions across the system.</p>
+              <h2>Bridge Activity</h2>
+              <p>Recorded wallet-funded teleports across the system.</p>
             </div>
             <div className="button-row">
-              <button
-                className={statusFilter === "all" ? "primary compact" : "secondary compact"}
-                onClick={() => {
-                  setStatusFilter("all");
-                  setPage(0);
-                }}
-              >
+              <button className={statusFilter === "all" ? "primary compact" : "secondary compact"} onClick={() => { setStatusFilter("all"); setPage(0); }}>
                 All
               </button>
-              <button
-                className={statusFilter === "queued" ? "primary compact" : "secondary compact"}
-                onClick={() => {
-                  setStatusFilter("queued");
-                  setPage(0);
-                }}
-              >
+              <button className={statusFilter === "queued" ? "primary compact" : "secondary compact"} onClick={() => { setStatusFilter("queued"); setPage(0); }}>
                 Queued
               </button>
-              <button
-                className={statusFilter === "failed" ? "primary compact" : "secondary compact"}
-                onClick={() => {
-                  setStatusFilter("failed");
-                  setPage(0);
-                }}
-              >
+              <button className={statusFilter === "failed" ? "primary compact" : "secondary compact"} onClick={() => { setStatusFilter("failed"); setPage(0); }}>
                 Failed
               </button>
-              <button
-                className={statusFilter === "settled" ? "primary compact" : "secondary compact"}
-                onClick={() => {
-                  setStatusFilter("settled");
-                  setPage(0);
-                }}
-              >
+              <button className={statusFilter === "settled" ? "primary compact" : "secondary compact"} onClick={() => { setStatusFilter("settled"); setPage(0); }}>
                 Settled
               </button>
-              <button
-                className={sourceFilter === "all" ? "primary compact" : "secondary compact"}
-                onClick={() => {
-                  setSourceFilter("all");
-                  setPage(0);
-                }}
-              >
+              <button className={sourceFilter === "all" ? "primary compact" : "secondary compact"} onClick={() => { setSourceFilter("all"); setPage(0); }}>
                 All Sources
               </button>
-              <button
-                className={sourceFilter === "user" ? "primary compact" : "secondary compact"}
-                onClick={() => {
-                  setSourceFilter("user");
-                  setPage(0);
-                }}
-              >
+              <button className={sourceFilter === "user" ? "primary compact" : "secondary compact"} onClick={() => { setSourceFilter("user"); setPage(0); }}>
                 User
               </button>
-              <button
-                className={sourceFilter === "ai" ? "primary compact" : "secondary compact"}
-                onClick={() => {
-                  setSourceFilter("ai");
-                  setPage(0);
-                }}
-              >
-                AI
+              <button className={sourceFilter === "ai" ? "primary compact" : "secondary compact"} onClick={() => { setSourceFilter("ai"); setPage(0); }}>
+                AI Legacy
               </button>
             </div>
           </div>
@@ -484,12 +333,12 @@ export default function AdminPage() {
               <span>Requester</span>
               <span>Amount</span>
               <span>Origin Tx</span>
-              <span>Admin</span>
+              <span>Details</span>
             </div>
             {!isAdmin ? (
               <div className="activity-empty">{message}</div>
             ) : actions.length === 0 ? (
-              <div className="activity-empty">No actions in the queue yet.</div>
+              <div className="activity-empty">No bridge actions recorded yet.</div>
             ) : (
               actions.map((action) => (
                 <div className="activity-row admin-grid" key={action.id}>
@@ -499,20 +348,11 @@ export default function AdminPage() {
                   <span>
                     <span className={`action-badge ${action.status}`}>{action.status}</span>
                   </span>
-                  <span>
-                    <Link className="inline-link" href={`/admin/actions/${action.id}`}>
-                      {shortAddress(action.requester)}
-                    </Link>
-                  </span>
+                  <span>{shortAddress(action.requester)}</span>
                   <span>{action.amountDisplay} PAS</span>
                   <span>
                     {action.originTxHash ? (
-                      <a
-                        className="inline-link"
-                        href={`${appConfig.explorerUrl}/tx/${action.originTxHash}`}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
+                      <a className="inline-link" href={`${appConfig.explorerUrl}/tx/${action.originTxHash}`} target="_blank" rel="noreferrer">
                         {shortAddress(action.originTxHash)}
                       </a>
                     ) : (
@@ -520,17 +360,9 @@ export default function AdminPage() {
                     )}
                   </span>
                   <span>
-                    {action.status === "failed" ? (
-                      <button
-                        className="secondary compact"
-                        disabled={busy === action.id}
-                        onClick={() => retryAction(action.id)}
-                      >
-                        {busy === action.id ? "Retrying..." : "Retry"}
-                      </button>
-                    ) : (
-                      "--"
-                    )}
+                    <Link className="inline-link" href={`/admin/actions/${action.id}`}>
+                      Open
+                    </Link>
                   </span>
                 </div>
               ))
@@ -538,18 +370,10 @@ export default function AdminPage() {
           </div>
           {isAdmin ? (
             <div className="button-row top-gap">
-              <button
-                className="secondary compact"
-                disabled={page === 0}
-                onClick={() => setPage((current) => Math.max(0, current - 1))}
-              >
+              <button className="secondary compact" disabled={page === 0} onClick={() => setPage((current) => Math.max(0, current - 1))}>
                 Previous
               </button>
-              <button
-                className="secondary compact"
-                disabled={(page + 1) * limit >= total}
-                onClick={() => setPage((current) => current + 1)}
-              >
+              <button className="secondary compact" disabled={(page + 1) * limit >= total} onClick={() => setPage((current) => current + 1)}>
                 Next
               </button>
             </div>
@@ -560,7 +384,7 @@ export default function AdminPage() {
           <div className="panel-head">
             <div>
               <h2>AI Recommendation Snapshots</h2>
-              <p>Latest AI decisions, posture, and auto-queue eligibility.</p>
+              <p>Latest advisory snapshots recorded for connected vault wallets.</p>
             </div>
           </div>
           <div className="activity-table">
@@ -569,7 +393,7 @@ export default function AdminPage() {
               <span>Action</span>
               <span>Score</span>
               <span>Posture</span>
-              <span>Auto-Queue</span>
+              <span>Readiness</span>
               <span>Linked Action</span>
             </div>
             {!isAdmin ? (
@@ -583,9 +407,7 @@ export default function AdminPage() {
                   <span className={`badge-inline ${decision.action}`}>{decision.action}</span>
                   <span>{decision.score}/100</span>
                   <span className={`badge-inline ${decision.posture}`}>{decision.posture}</span>
-                  <span className={`badge-inline ${decision.autoQueueEligible ? "healthy" : "guarded"}`}>
-                    {decision.autoQueueEligible ? "eligible" : "review"}
-                  </span>
+                  <span>{decision.executionReadiness}</span>
                   <span>
                     {decision.linkedActionId ? (
                       <Link className="inline-link" href={`/admin/actions/${decision.linkedActionId}`}>
@@ -637,8 +459,8 @@ export default function AdminPage() {
         <article className="panel">
           <div className="panel-head">
             <div>
-              <h2>Relayer Health</h2>
-              <p>Worker heartbeat and latest processing state.</p>
+              <h2>Vault Roles</h2>
+              <p>Addresses that currently control admin and AI configuration.</p>
             </div>
           </div>
           <div className="strategy-box">
@@ -651,37 +473,13 @@ export default function AdminPage() {
               <strong>{shortAddress(aiOperator)}</strong>
             </div>
             <div className="strategy-line">
-              <span>Last heartbeat</span>
-              <strong>
-                {health.worker?.lastHeartbeatAt
-                  ? new Date(health.worker.lastHeartbeatAt).toLocaleString()
-                  : "--"}
-              </strong>
-            </div>
-            <div className="strategy-line">
-              <span>Last action</span>
-              <strong>{shortAddress(health.worker?.lastActionId)}</strong>
-            </div>
-            <div className="strategy-line">
-              <span>Worker status</span>
-              <strong>{health.worker?.lastActionStatus || "--"}</strong>
-            </div>
-            <div className="strategy-line">
-              <span>Relayer connection</span>
-              <strong>{relayer?.connected ? "online" : "offline"}</strong>
-            </div>
-            <div className="strategy-line">
-              <span>Relayer funds</span>
-              <strong>{relayer?.status || "--"}</strong>
-            </div>
-            <div className="strategy-line">
-              <span>Relayer balance</span>
-              <strong>{relayer?.free || "--"}</strong>
+              <span>Total bridge records</span>
+              <strong>{String(health.queue?.total ?? 0)}</strong>
             </div>
           </div>
           <div className="log-box top-gap">
-            <strong>Worker diagnostics</strong>
-            <pre>{relayer?.error || health.worker?.lastError || message}</pre>
+            <strong>Admin status</strong>
+            <pre>{message}</pre>
           </div>
         </article>
       </section>
