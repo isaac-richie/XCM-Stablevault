@@ -33,10 +33,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const built = await buildTeleportMessage({
-      amount: body.amount,
-      beneficiary: body.beneficiary
-    });
+    let built;
+    try {
+      built = await buildTeleportMessage({
+        amount: body.amount,
+        beneficiary: body.beneficiary
+      });
+    } catch (error: any) {
+      const message = String(error?.message || "");
+      if (message.includes("Invalid decoded address length") || message.includes("Decoding")) {
+        return NextResponse.json(
+          { ok: false, error: "Recipient is not a valid SS58 address" },
+          { status: 400 }
+        );
+      }
+      throw error;
+    }
 
     let beforeBalance: string | null = null;
 
