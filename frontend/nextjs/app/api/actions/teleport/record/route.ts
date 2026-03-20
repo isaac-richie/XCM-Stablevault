@@ -19,7 +19,7 @@ type RecordBody = {
   beneficiary: string;
   amount: string;
   txHash: string;
-  beforeBalance?: string;
+  beforeBalance?: string | null;
   aiDecisionId?: string;
 };
 
@@ -74,13 +74,22 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const afterVerify = await runRepoScript("xcm:verify-people", {
-      BENEFICIARY_SS58: body.beneficiary
-    });
-    const afterPayload = parseVerifyOutput(afterVerify.stdout);
-    const afterBalance = afterPayload.account?.free || "0";
-    const beforeBalance = body.beforeBalance || "0";
-    const settled = BigInt(afterBalance) > BigInt(beforeBalance);
+    let afterBalance: string | undefined;
+    let settled = false;
+    const beforeBalance = body.beforeBalance || undefined;
+
+    try {
+      const afterVerify = await runRepoScript("xcm:verify-people", {
+        BENEFICIARY_SS58: body.beneficiary
+      });
+      const afterPayload = parseVerifyOutput(afterVerify.stdout);
+      afterBalance = afterPayload.account?.free || "0";
+      if (beforeBalance != null && afterBalance != null) {
+        settled = BigInt(afterBalance) > BigInt(beforeBalance);
+      }
+    } catch (error) {
+      console.error("[teleport/record] failed to verify destination balance", error);
+    }
 
     const now = new Date().toISOString();
     const action: TeleportAction = {

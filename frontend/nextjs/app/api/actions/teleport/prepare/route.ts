@@ -38,11 +38,17 @@ export async function POST(request: NextRequest) {
       beneficiary: body.beneficiary
     });
 
-    const beforeVerify = await runRepoScript("xcm:verify-people", {
-      BENEFICIARY_SS58: body.beneficiary
-    });
-    const beforePayload = parseVerifyOutput(beforeVerify.stdout);
-    const beforeBalance = beforePayload.account?.free || "0";
+    let beforeBalance: string | null = null;
+
+    try {
+      const beforeVerify = await runRepoScript("xcm:verify-people", {
+        BENEFICIARY_SS58: body.beneficiary
+      });
+      const beforePayload = parseVerifyOutput(beforeVerify.stdout);
+      beforeBalance = beforePayload.account?.free || "0";
+    } catch (error) {
+      console.error("[teleport/prepare] failed to fetch destination pre-balance", error);
+    }
 
     return NextResponse.json({
       ok: true,
