@@ -1,7 +1,7 @@
 import { Contract, JsonRpcProvider } from "ethers";
 import { NextRequest, NextResponse } from "next/server";
 import { mockUsdAbi, vaultAbi, wpasAbi } from "../../../../lib/abis";
-import { buildAiRecommendation } from "../../../../lib/ai-engine";
+import { AiRecommendation, buildAiRecommendation } from "../../../../lib/ai-engine";
 import { insertAiDecision } from "../../../../lib/ai-decisions-repo";
 import { appConfig } from "../../../../lib/config";
 import { DashboardState } from "../../../../lib/frontend-types";
@@ -14,6 +14,27 @@ const provider = new JsonRpcProvider(
 const vault = new Contract(appConfig.vaultAddress, vaultAbi, provider);
 const wpas = new Contract(appConfig.wpasAddress, wpasAbi, provider);
 const mockUsd = new Contract(appConfig.mockUsdAddress, mockUsdAbi, provider);
+
+function fallbackRecommendation(): AiRecommendation {
+  return {
+    score: 50,
+    posture: "watch",
+    action: "hold",
+    beneficiary: appConfig.peopleBeneficiary,
+    suggestedAmountPas: "0",
+    pendingActions: 0,
+    failedActions: 0,
+    explanation: "Live recommendation is running in fallback mode. Review your wallet position and retry once connectivity stabilizes.",
+    reasons: ["Live AI inputs are temporarily degraded."],
+    constraints: ["Keep enough PAS for gas and confirm destination details manually."],
+    queuePressure: "low",
+    executionReadiness: "attention",
+    relayerHealth: "healthy",
+    vaultUtilization: "--",
+    autoQueueEligible: false,
+    autoQueueReason: "AI is advisory only while fallback mode is active."
+  } as const;
+}
 
 export async function GET(request: NextRequest) {
   const requester = request.nextUrl.searchParams.get("requester");
@@ -78,9 +99,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ ok: true, recommendation });
   } catch (error: any) {
-    return NextResponse.json(
-      { ok: false, error: error?.message || "AI recommendation failed" },
-      { status: 500 }
-    );
+    console.error("[ai/recommendation] failed to build recommendation", error);
+    return NextResponse.json({ ok: true, recommendation: fallbackRecommendation(), degraded: true });
   }
 }

@@ -53,8 +53,8 @@ async function ensureInit() {
         connectionString,
         ssl: useSsl ? { rejectUnauthorized: false } : undefined,
         max: Number(process.env.DATABASE_POOL_MAX || "3"),
-        idleTimeoutMillis: Number(process.env.DATABASE_IDLE_TIMEOUT_MS || "10000"),
-        connectionTimeoutMillis: Number(process.env.DATABASE_CONNECT_TIMEOUT_MS || "10000"),
+        idleTimeoutMillis: Number(process.env.DATABASE_IDLE_TIMEOUT_MS || "5000"),
+        connectionTimeoutMillis: Number(process.env.DATABASE_CONNECT_TIMEOUT_MS || "2500"),
         allowExitOnIdle: true
       });
     } else {
