@@ -24,8 +24,7 @@ const readProvider = new JsonRpcProvider(appConfig.rpcUrl, { chainId: appConfig.
 const SUPPRESS_WALLET_KEY = "stablevault:suppress-wallet";
 const XCM_PRECOMPILE_ADDRESS = "0x00000000000000000000000000000000000a0000";
 const xcmPrecompileAbi = [
-  "function weighMessage(bytes message) view returns (tuple(uint64 refTime, uint64 proofSize) weight)",
-  "function execute(bytes message, tuple(uint64 refTime, uint64 proofSize) weight)"
+  "function send(bytes destination, bytes message)"
 ];
 
 
@@ -743,15 +742,11 @@ export default function Page() {
         kind: "idle"
       });
 
-      const weight = await xcmPrecompile.weighMessage(preparePayload.payload.messageHex);
-      const tx = await xcmPrecompile.execute(
+      const tx = await xcmPrecompile.send(
+        preparePayload.payload.destinationHex,
         preparePayload.payload.messageHex,
         {
-          refTime: weight.refTime,
-          proofSize: weight.proofSize
-        },
-        {
-        gasLimit: 800000
+          gasLimit: 800000
         }
       );
 

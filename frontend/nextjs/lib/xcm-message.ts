@@ -13,10 +13,9 @@ export async function buildTeleportMessage(input: {
   const repoRoot = path.resolve(process.cwd(), "..", "..");
   const amountPlanck = parseUnits(input.amount, 10).toString();
   const paraId = Number(process.env.ASSET_HUB_PARA_ID || "1004");
-  // The Hub docs' execute() example is a VersionedXcm message that performs
-  // WithdrawAsset + BuyExecution + DepositAsset. For direct wallet teleports we
-  // stay on that path, but use the reserve parent so the asset location matches
-  // PAS as seen from Hub when executing cross-consensus instructions.
+  // Wallet-funded teleports use the XCM precompile send(destination, message)
+  // path. The destination selects Asset Hub and the message performs the asset
+  // move + deposit on the target chain.
   const versionOverride = process.env.XCM_VERSION ? Number(process.env.XCM_VERSION) : 5;
   const messageMode = "full" as const;
   const destinationMode = "para" as const;
