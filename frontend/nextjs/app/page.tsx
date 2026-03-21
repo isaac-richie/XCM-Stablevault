@@ -782,17 +782,19 @@ export default function Page() {
         }
       }
 
+      const settled = recordResponse.ok && recordPayload.ok && recordPayload.action?.status === "settled";
+
       setLog({
-        title: "Teleport sent",
-        body: recordResponse.ok && recordPayload.ok
-          ? `Sent ${requestedAmount} PAS from your wallet. History has been updated.`
-          : `Sent ${requestedAmount} PAS from your wallet. History could not be updated automatically.`,
-        kind: "success"
+        title: settled ? "Teleport settled" : "Teleport not settled",
+        body: settled
+          ? `Sent ${requestedAmount} PAS from your wallet. Destination settlement was detected and history has been updated.`
+          : `The Hub transaction confirmed, but destination settlement was not detected. Do not treat this as a completed teleport yet.`,
+        kind: settled ? "success" : "error"
       });
       pushToast(
-        "Teleport confirmed",
-        `Included on ${appConfig.chainName}.`,
-        "success"
+        settled ? "Teleport settled" : "Teleport unverified",
+        settled ? `Included and verified for ${requestedBeneficiary}.` : `Hub transaction confirmed, but destination settlement was not detected.`,
+        settled ? "success" : "error"
       );
     } catch (error: any) {
       setLog({

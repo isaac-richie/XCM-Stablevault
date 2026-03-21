@@ -13,13 +13,12 @@ export async function buildTeleportMessage(input: {
   const repoRoot = path.resolve(process.cwd(), "..", "..");
   const amountPlanck = parseUnits(input.amount, 10).toString();
   const paraId = Number(process.env.ASSET_HUB_PARA_ID || "1004");
-  // Wallet-funded teleports use the XCM precompile send(destination, message)
-  // path. The destination selects Asset Hub and the message performs the asset
-  // move + deposit on the target chain.
-  const versionOverride = process.env.XCM_VERSION ? Number(process.env.XCM_VERSION) : 5;
-  const messageMode = "full" as const;
-  const destinationMode = "para" as const;
-  const assetParents = 1;
+  // Keep the frontend builder aligned with the repo's known working sendXcm()
+  // script path instead of hard-coding a different asset location/version.
+  const versionOverride = process.env.XCM_VERSION ? Number(process.env.XCM_VERSION) : undefined;
+  const messageMode = ((process.env.XCM_MESSAGE_MODE || "") as Parameters<typeof buildXcmBytes>[0]["messageMode"]) || "full";
+  const destinationMode = ((process.env.XCM_DESTINATION_MODE || "") as Parameters<typeof buildXcmBytes>[0]["destinationMode"]) || "para";
+  const assetParents = process.env.XCM_ASSET_PARENTS ? Number(process.env.XCM_ASSET_PARENTS) : undefined;
 
   const { destinationHex, messageHex, xcmVersion } = await buildXcmBytes({
     amount: amountPlanck,
