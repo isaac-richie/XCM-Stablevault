@@ -7,6 +7,8 @@ mkdirSync(dataDir, { recursive: true });
 
 const DB_CLIENT = process.env.DB_CLIENT || "sqlite";
 const isPostgres = DB_CLIENT === "postgres";
+const shouldApplySchema = !isPostgres || process.env.DATABASE_APPLY_SCHEMA === "true";
+const INIT_RETRY_COOLDOWN_MS = Number(process.env.DATABASE_INIT_RETRY_COOLDOWN_MS || "10000");
 
 type SqliteDatabase = import("better-sqlite3").Database;
 
@@ -14,6 +16,8 @@ let sqlite: SqliteDatabase | null = null;
 let pool: Pool | null = null;
 let initialized = false;
 let initPromise: Promise<void> | null = null;
+let lastInitError: Error | null = null;
+let lastInitErrorAt = 0;
 
 export type SqlValue = string | number | null;
 
@@ -34,6 +38,9 @@ function toPgPlaceholders(sql: string) {
 
 async function ensureInit() {
   if (initialized) return;
+  if (lastInitError && Date.now() - lastInitErrorAt < INIT_RETRY_COOLDOWN_MS) {
+    throw lastInitError;
+  }
   if (initPromise) {
     await initPromise;
     return;
@@ -65,12 +72,20 @@ async function ensureInit() {
       sqlite.pragma("busy_timeout = 5000");
     }
 
-    await applySchema();
+    if (shouldApplySchema) {
+      await applySchema();
+    }
     initialized = true;
   })();
 
   try {
     await initPromise;
+    lastInitError = null;
+    lastInitErrorAt = 0;
+  } catch (error: any) {
+    lastInitError = error instanceof Error ? error : new Error(String(error));
+    lastInitErrorAt = Date.now();
+    throw error;
   } finally {
     initPromise = null;
   }
