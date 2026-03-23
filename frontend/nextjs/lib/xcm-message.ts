@@ -13,12 +13,11 @@ export async function buildTeleportMessage(input: {
   const repoRoot = path.resolve(process.cwd(), "..", "..");
   const amountPlanck = parseUnits(input.amount, 10).toString();
   const paraId = Number(process.env.ASSET_HUB_PARA_ID || "1004");
-  // Keep the frontend builder aligned with the repo's known working sendXcm()
-  // script path instead of hard-coding a different asset location/version.
-  const versionOverride = process.env.XCM_VERSION ? Number(process.env.XCM_VERSION) : undefined;
+  // Hub currently behaves best with XCM v5 for this path; allow env override.
+  const versionOverride = process.env.XCM_VERSION ? Number(process.env.XCM_VERSION) : 5;
   const messageMode = ((process.env.XCM_MESSAGE_MODE || "") as Parameters<typeof buildXcmBytes>[0]["messageMode"]) || "full";
   const destinationMode = ((process.env.XCM_DESTINATION_MODE || "") as Parameters<typeof buildXcmBytes>[0]["destinationMode"]) || "para";
-  const assetParents = process.env.XCM_ASSET_PARENTS ? Number(process.env.XCM_ASSET_PARENTS) : undefined;
+  const assetParents = process.env.XCM_ASSET_PARENTS ? Number(process.env.XCM_ASSET_PARENTS) : 1;
 
   const { destinationHex, messageHex, xcmVersion } = await buildXcmBytes({
     amount: amountPlanck,

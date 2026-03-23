@@ -63,7 +63,13 @@ const moreNav = [
 
 
 function getWalletErrorMessage(error: any) {
-  const message = error?.shortMessage || error?.message || "Request failed.";
+  const nested =
+    error?.info?.error?.message ||
+    error?.error?.message ||
+    error?.cause?.message ||
+    error?.data?.message ||
+    error?.details;
+  const message = nested || error?.shortMessage || error?.message || "Request failed.";
   const normalized = String(message).toLowerCase();
 
   if (
@@ -73,6 +79,10 @@ function getWalletErrorMessage(error: any) {
     normalized.includes("user denied")
   ) {
     return "Request cancelled in wallet. No changes were made.";
+  }
+
+  if (normalized.includes("could not coalesce error")) {
+    return "RPC rejected the teleport payload. Check destination format and retry with a small amount (for example 1 PAS).";
   }
 
   return message;
